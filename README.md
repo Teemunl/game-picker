@@ -50,3 +50,20 @@ The app auto-detects columns by header name. Supported headers:
 | `reviews` | `reviewcount` | Number of reviews |
 
 After a game is picked, the app uses `id` + `platform` to construct the GameFAQs URL, then fetches the cover image from that page automatically. No image URLs are needed in the CSV.
+
+## Testing game IDs
+
+Use the dataset checks to verify that game IDs are present, numeric, and generate valid GameFAQs URLs:
+
+```powershell
+python -m unittest test_ids.py
+```
+
+To check a small sample of IDs against live GameFAQs pages and confirm they match the listed game titles, enable the optional network test:
+
+```powershell
+$env:RUN_LIVE_TESTS = "1"
+python -m unittest test_ids.py
+```
+
+The live check tests only a sample of your database, not every ID. It caches successful responses locally for 24 hours and stops if GameFAQs rate-limits requests.
