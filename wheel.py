@@ -163,15 +163,31 @@ def set_rounded_window(root, radius=20):
 	root.after(10, update_region)
 
 
-def _gamefaqs_request(url):
-	return urllib.request.Request(url, headers={
+def _gamefaqs_request(url, is_image=False, referer="https://gamefaqs.gamespot.com/"):
+	headers = {
 		'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-		'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 		'Accept-Language': 'en-US,en;q=0.9',
-		'Accept-Encoding': 'gzip, deflate',
-		'Referer': 'https://gamefaqs.gamespot.com/',
-		'Connection': 'close',
-	})
+		'Referer': referer,
+	}
+	if is_image:
+		headers.update({
+			'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+			'Sec-Fetch-Dest': 'image',
+			'Sec-Fetch-Mode': 'no-cors',
+			'Sec-Fetch-Site': 'same-origin',
+		})
+	else:
+		headers.update({
+			'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+			'Accept-Encoding': 'gzip, deflate',
+			'Upgrade-Insecure-Requests': '1',
+			'Sec-Fetch-Dest': 'document',
+			'Sec-Fetch-Mode': 'navigate',
+			'Sec-Fetch-Site': 'same-origin',
+			'Sec-Fetch-User': '?1',
+			'Connection': 'close',
+		})
+	return urllib.request.Request(url, headers=headers)
 
 
 def _decode_response(resp):
@@ -200,20 +216,30 @@ def fetch_cover_image_url(page_url):
 	return None
 
 
-def load_poster(game, max_size=(220, 320)):
+def load_poster(game, max_size=(200, 260)):
 	if not PIL_AVAILABLE:
 		return None
-	url = fetch_cover_image_url(build_gamefaqs_url(game))
-	if not url:
+	page_url = build_gamefaqs_url(game)
+	img_url = fetch_cover_image_url(page_url)
+	if not img_url:
 		return None
-	try:
-		with urllib.request.urlopen(_gamefaqs_request(url), timeout=10) as resp:
-			data = resp.read()
-		img = Image.open(io.BytesIO(data))
-		img.thumbnail(max_size, Image.LANCZOS)
-		return ImageTk.PhotoImage(img)
-	except Exception:
-		return None
+	# Prefer full-resolution front box art over tiny 100x140 thumbnail
+	candidates = []
+	if "_thumb" in img_url:
+		candidates.append(img_url.replace("_thumb", "_front"))
+	candidates.append(img_url)
+
+	for candidate in candidates:
+		try:
+			req = _gamefaqs_request(candidate, is_image=True, referer=page_url or "https://gamefaqs.gamespot.com/")
+			with urllib.request.urlopen(req, timeout=8) as resp:
+				data = resp.read()
+			img = Image.open(io.BytesIO(data))
+			img.thumbnail(max_size, Image.LANCZOS)
+			return ImageTk.PhotoImage(img)
+		except Exception:
+			continue
+	return None
 
 
 def console_spin(games, cycles=50, start_delay=0.01, end_delay=0.15):
@@ -315,7 +341,7 @@ class WheelGUI:
 		# Info panel
 		info = tk.Frame(frame, bg=panel)
 		info.pack(padx=16, pady=12, fill='x')
-		self.poster_label = tk.Label(info, bg="#0a0a1e", fg=dim, width=22, height=14,
+		self.poster_label = tk.Label(info, bg="#0a0a1e", fg=dim, width=18, height=12,
 			relief='flat', bd=0, text='No image', font=("Segoe UI", 9),
 			highlightthickness=1, highlightbackground=sep)
 		self.poster_label.pack(side='left', padx=(0, 14), pady=2)
@@ -340,9 +366,9 @@ class WheelGUI:
 		self.root.update_idletasks()
 		self.poster_image = load_poster(game)
 		if self.poster_image:
-			self.poster_label.config(image=self.poster_image, text='')
+			self.poster_label.config(image=self.poster_image, text='', width=0, height=0)
 		else:
-			self.poster_label.config(image='', text='No image', width=22, height=14,
+			self.poster_label.config(image='', text='No image', width=18, height=12,
 				bg='#0a0a1e', fg=self.ACCENT, anchor='center')
 		self.meta_label.config(text=game.metadata_text(), fg="#cccccc")
 		self.status_label.config(text=f"Selected: {game.display()}")
